@@ -9,3 +9,8 @@ out
 *.prof
 .nfs*
 _cache_*
+
+data/
+ckpts/
+ckpts
+*.ipynb
