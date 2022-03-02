@@ -58,12 +58,15 @@ class BoundingBoxGenerator(nn.Module):
         if prior_npz_file is not None:
             try:
                 prior = np.load(prior_npz_file)['coordinates']
-                # We multiply by ~0.23 as this is multiplier of the original clevr
-                # world and our world scale
-                self.prior = torch.from_numpy(prior).float() * 0.2378777237835723
-            except Exception as e: 
-                print("WARNING: Clevr prior location file could not be loaded!")
-                print("For rendering, this is fine, but for training, please download the files using the download script.")
+                # We multiply by ~0.23 as this is multiplier of the original
+                # clevr world and our world scale
+                self.prior = torch.from_numpy(prior).float() * \
+                    0.2378777237835723
+            except Exception:
+                print(
+                    "WARNING: Clevr prior location file could not be loaded!")
+                print('For rendering, this is fine, but for training, please '
+                      'download the files using the download script.')
                 self.prior = None
         else:
             self.prior = None
@@ -142,8 +145,10 @@ class BoundingBoxGenerator(nn.Module):
             if self.object_on_plane:
                 t[..., -1] = self.z_level_plane
 
-        def r_val(): return self.rotation_range[0] + np.random.rand() * (
-            self.rotation_range[1] - self.rotation_range[0])
+        def r_val():
+            return self.rotation_range[0] + np.random.rand() * (
+                self.rotation_range[1] - self.rotation_range[0])
+
         R = [torch.from_numpy(
             Rot.from_euler('z', r_val() * 2 * np.pi).as_dcm())
             for i in range(batch_size * self.n_boxes)]

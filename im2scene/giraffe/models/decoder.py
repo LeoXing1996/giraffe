@@ -60,10 +60,10 @@ class Decoder(nn.Module):
             # remove * 2 because of cos and sin
             self.B_pos = gauss_std * \
                 torch.from_numpy(np.random.randn(
-                    1,  gauss_dim_pos * 3, 3)).float().cuda()
+                    1, gauss_dim_pos * 3, 3)).float().cuda()
             self.B_view = gauss_std * \
                 torch.from_numpy(np.random.randn(
-                    1,  gauss_dim_view * 3, 3)).float().cuda()
+                    1, gauss_dim_view * 3, 3)).float().cuda()
             dim_embed = 3 * gauss_dim_pos * 2
             dim_embed_view = 3 * gauss_dim_view * 2
         else:

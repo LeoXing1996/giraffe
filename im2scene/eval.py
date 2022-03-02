@@ -70,8 +70,9 @@ def get_activations(files, model, batch_size=50, dims=2048,
 
             pred = model(batch)[0]
 
-            # If model output is not scalar, apply global spatial average pooling.
-            # This happens if you choose a dimensionality not equal 2048.
+            # If model output is not scalar, apply global spatial average
+            # pooling. This happens if you choose a dimensionality not
+            # equal 2048.
             if pred.size(2) != 1 or pred.size(3) != 1:
                 pred = adaptive_avg_pool2d(pred, output_size=(1, 1))
 
@@ -86,17 +87,20 @@ def get_activations(files, model, batch_size=50, dims=2048,
                 batch = batch.cuda()
             pred = model(batch)[0]
 
-            # If model output is not scalar, apply global spatial average pooling.
-            # This happens if you choose a dimensionality not equal 2048.
+            # If model output is not scalar, apply global spatial
+            # average pooling. This happens if you choose a dimensionality
+            # not equal 2048.
             if pred.size(2) != 1 or pred.size(3) != 1:
                 pred = adaptive_avg_pool2d(pred, output_size=(1, 1))
 
             pred = pred.squeeze(3).squeeze(2).cpu().numpy()
             pred_arr[start_idx:start_idx + pred.shape[0]] = pred
             start_idx = start_idx + pred.shape[0]
-            # pred_arr[start:end] = pred.cpu().data.numpy().reshape(pred.size(0), -1)
-            #pred_arr.append(pred.cpu().data.numpy().reshape(pred.shape[0], -1))
-        #pred_arr = np.concatenate(pred_arr, axis=0)
+            # pred_arr[start:end] = pred.cpu().data.numpy().reshape(
+            #     pred.size(0), -1)
+            # pred_arr.append(pred.cpu().data.numpy().reshape(
+            #     pred.shape[0], -1))
+        # pred_arr = np.concatenate(pred_arr, axis=0)
 
     if verbose:
         print(' done')

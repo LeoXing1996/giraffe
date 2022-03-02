@@ -77,6 +77,10 @@ def get_camera_pose(range_u, range_v, range_r, val_u=0.5, val_v=0.5, val_r=0.5,
 
 
 def to_sphere(u, v):
+    r"""Convert u, v to sphere.
+    phi: angle between y-axis (up axis)
+    theta: angle between x-axis
+    """
     theta = 2 * np.pi * u
     phi = np.arccos(1 - 2 * v)
     cx = np.sin(phi) * np.cos(theta)
@@ -99,20 +103,34 @@ def sample_on_sphere(range_u=(0, 1), range_v=(0, 1), size=(1,),
 
 def look_at(eye, at=np.array([0, 0, 0]), up=np.array([0, 0, 1]), eps=1e-5,
             to_pytorch=True):
+    """Get view projection matrix (world to camera).
+
+        eye: position of camera
+        at: position of object
+        up: up direction of the camera. denotes the camera is up or down.
+            This direction will be revised by this function.
+
+    Returns
+        [[x, y, z]]: Actually the inverse of lookAt (camera to world).
+        The look at should be cat at axis=1
+    """
     at = at.astype(float).reshape(1, 3)
     up = up.astype(float).reshape(1, 3)
     eye = eye.reshape(-1, 3)
     up = up.repeat(eye.shape[0] // up.shape[0], axis=0)
     eps = np.array([eps]).reshape(1, 1).repeat(up.shape[0], axis=0)
 
+    # z / forward direction
     z_axis = eye - at
     z_axis /= np.max(np.stack([np.linalg.norm(z_axis,
                                               axis=1, keepdims=True), eps]))
 
+    # y \times z = x / right direction
     x_axis = np.cross(up, z_axis)
     x_axis /= np.max(np.stack([np.linalg.norm(x_axis,
                                               axis=1, keepdims=True), eps]))
 
+    # z \times x = y / up direction
     y_axis = np.cross(z_axis, x_axis)
     y_axis /= np.max(np.stack([np.linalg.norm(y_axis,
                                               axis=1, keepdims=True), eps]))
@@ -128,6 +146,6 @@ def look_at(eye, at=np.array([0, 0, 0]), up=np.array([0, 0, 1]), eps=1e-5,
 
 
 def get_rotation_matrix(axis='z', value=0., batch_size=32):
-    r = Rot.from_euler(axis, value * 2 * np.pi).as_dcm()
+    r = Rot.from_euler(axis, value * 2 * np.pi).as_matrix()
     r = torch.from_numpy(r).reshape(1, 3, 3).repeat(batch_size, 1, 1)
     return r

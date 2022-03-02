@@ -5,7 +5,7 @@ import numpy as np
 import glob
 from PIL import Image
 from torchvision import transforms
-import lmdb
+# import lmdb
 import pickle
 import string
 import io
