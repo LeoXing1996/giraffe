@@ -8,6 +8,7 @@ parser = argparse.ArgumentParser(
     description='Render images of a GIRAFFE model.'
 )
 parser.add_argument('config', type=str, help='Path to config file.')
+parser.add_argument('--ckpt-root', type=str, help='The root for ckpt files.')
 parser.add_argument('--no-cuda', action='store_true', help='Do not use cuda.')
 
 args = parser.parse_args()
@@ -22,7 +23,10 @@ if not os.path.exists(render_dir):
 # Model
 model = config.get_model(cfg, device=device)
 
-checkpoint_io = CheckpointIO(out_dir, model=model)
+if args.ckpt_root:
+    checkpoint_io = CheckpointIO(args.ckpt_root, model=model)
+else:
+    checkpoint_io = CheckpointIO(out_dir, model=model)
 checkpoint_io.load(cfg['test']['model_file'])
 
 # Generator

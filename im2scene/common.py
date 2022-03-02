@@ -11,6 +11,14 @@ def arange_pixels(resolution=(128, 128), batch_size=1, image_range=(-1., 1.),
     The function returns the unscaled pixel locations as integers and the
     scaled float values.
 
+    the arranged pixels are in image (film) coordinates
+                y (H)
+                ^
+                |
+                |
+    x (W) <------
+    if invert_y_axis is true, y-axis should be pointed down.
+
     Args:
         resolution (tuple): image resolution
         batch_size (int): batch size
@@ -69,7 +77,8 @@ def to_pytorch(tensor, return_type=False):
 
 def transform_to_world(pixels, depth, camera_mat, world_mat, scale_mat=None,
                        invert=True, use_absolute_depth=True):
-    ''' Transforms pixel positions p with given depth value d to world coordinates.
+    ''' Transforms pixel positions p with given depth value d to world
+    coordinates.
 
     Args:
         pixels (tensor): pixel tensor of size B x N x 2
@@ -99,17 +108,23 @@ def transform_to_world(pixels, depth, camera_mat, world_mat, scale_mat=None,
         scale_mat = torch.inverse(scale_mat)
 
     # Transform pixels to homogen coordinates
+    # [bz, H*W, 2] -> [bz, 2, H*W] (H*W=n_points)
     pixels = pixels.permute(0, 2, 1)
+    # [bz, 2, H*W] -> [bz, 4, H*W]
     pixels = torch.cat([pixels, torch.ones_like(pixels)], dim=1)
 
     # Project pixels into camera space
+    # original pixels is in `screen` space,
+    #   1. use (x, y) * depth to map (x, y) to camera space
+    #   2. use 1 * depth to map (z) to camera space
+    # depth: [bz, H*W, 1]
     if use_absolute_depth:
         pixels[:, :2] = pixels[:, :2] * depth.permute(0, 2, 1).abs()
         pixels[:, 2:3] = pixels[:, 2:3] * depth.permute(0, 2, 1)
     else:
         pixels[:, :3] = pixels[:, :3] * depth.permute(0, 2, 1)
 
-    # Transform pixels to world space
+    # Transform pixels from camera to world space
     p_world = scale_mat @ world_mat @ camera_mat @ pixels
 
     # Transform p_world back to 3D coordinates

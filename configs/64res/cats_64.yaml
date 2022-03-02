@@ -9,7 +9,7 @@ model:
     translation_range_max: [0., 0., 0.]
     rotation_range: [0.40278, 0.59722]
   generator_kwargs:
-    range_v: [0.41667, 0.5] 
+    range_v: [0.41667, 0.5]
     fov: 10
 training:
   out_dir:  out/cats64

@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 import numpy as np
 from im2scene.common import interpolate_sphere
 from torchvision.utils import save_image, make_grid
@@ -69,6 +70,9 @@ class Renderer(object):
             if rp == 'render_add_clevr6':
                 self.set_random_seed()
                 self.render_add_objects_clevr6(img_out_path)
+            if rp == 'vis_raw_nerf':
+                self.set_random_seed()
+                self.render_raw_nerf(img_out_path)
 
     def render_object_rotation(self, img_out_path, batch_size=15, n_steps=32):
         gen = self.generator
@@ -556,6 +560,60 @@ class Renderer(object):
         makedirs(out_folder, exist_ok=True)
         self.save_video_and_images(outs, out_folder, name='add_clevr6',
                                    is_full_rotation=False, add_reverse=True)
+
+    def render_raw_nerf(self, img_out_path, batch_size=15, n_steps=32):
+        gen = self.generator
+        bbox_generator = gen.bounding_box_generator
+
+        n_boxes = bbox_generator.n_boxes
+
+        # Set rotation range
+        is_full_rotation = (bbox_generator.rotation_range[0] == 0
+                            and bbox_generator.rotation_range[1] == 1)
+        n_steps = int(n_steps * 2) if is_full_rotation else n_steps
+        r_scale = [0., 1.] if is_full_rotation else [0.1, 0.9]
+
+        # Get Random codes and bg rotation
+        latent_codes = gen.get_latent_codes(batch_size, tmp=self.sample_tmp)
+        bg_rotation = gen.get_random_bg_rotation(batch_size)
+
+        # Set Camera
+        camera_matrices = gen.get_camera(batch_size=batch_size)
+        s_val = [[0, 0, 0] for i in range(n_boxes)]
+        t_val = [[0.5, 0.5, 0.5] for i in range(n_boxes)]
+        r_val = [0. for i in range(n_boxes)]
+        s, t, _ = gen.get_transformations(s_val, t_val, r_val, batch_size)
+
+        out = []
+        for step in range(n_steps):
+            # Get rotation for this step
+            r = [step * 1.0 / (n_steps - 1) for i in range(n_boxes)]
+            r = [r_scale[0] + ri * (r_scale[1] - r_scale[0]) for ri in r]
+            r = gen.get_rotation(r, batch_size)
+
+            # define full transformation and evaluate model
+            transformations = [s, t, r]
+            with torch.no_grad():
+                out_i = gen(batch_size, latent_codes, camera_matrices,
+                            transformations, bg_rotation, mode='val',
+                            only_nerf=True)
+                # import ipdb
+                out_i = out_i.sum(dim=1, keepdim=True)
+                out_max = out_i.abs().max()
+                out_i = out_i / out_max
+                # ipdb.set_trace()
+                out_i = torch.cat([out_i] * 3, dim=1)
+                out_i = F.interpolate(out_i, size=256)
+
+            out.append(out_i.cpu())
+        out = torch.stack(out)
+        out = (out + 1) / 2  # [-1, 1] --> [0, 1]
+        out_folder = join(img_out_path, 'raw_nerf')
+        makedirs(out_folder, exist_ok=True)
+        self.save_video_and_images(
+            out, out_folder, name='raw_nerf',
+            is_full_rotation=is_full_rotation,
+            add_reverse=(not is_full_rotation))
 
     ##################
     # Helper functions

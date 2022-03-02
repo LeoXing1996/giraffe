@@ -85,16 +85,24 @@ class Generator(nn.Module):
                 transformations=None, bg_rotation=None, mode="training", it=0,
                 return_alpha_map=False,
                 not_render_background=False,
-                only_render_background=False):
+                only_render_background=False,
+                only_nerf=False  # add by us
+                ):
+        # shape_obj, arr_obj, shape_bg, app_bg
+        # [(bz, N, z_dim), (bz, N, z_dim), (bz, bg_dim), (bz, bg_dim)]
         if latent_codes is None:
             latent_codes = self.get_latent_codes(batch_size)
 
+        # [camera_mat, world2carmera_mat]
         if camera_matrices is None:
             camera_matrices = self.get_random_camera(batch_size)
 
+        # [s, t, R] --> [scale, transformation, rotation]
+        # [(bz, N, 3), (bz, N, 3), (bz, N, 3, 3)]
         if transformations is None:
             transformations = self.get_random_transformations(batch_size)
 
+        # (bz, 3, 3)
         if bg_rotation is None:
             bg_rotation = self.get_random_bg_rotation(batch_size)
 
@@ -109,7 +117,7 @@ class Generator(nn.Module):
                 latent_codes, camera_matrices, transformations, bg_rotation,
                 mode=mode, it=it, not_render_background=not_render_background,
                 only_render_background=only_render_background)
-            if self.neural_renderer is not None:
+            if self.neural_renderer is not None and not only_nerf:
                 rgb = self.neural_renderer(rgb_v)
             else:
                 rgb = rgb_v
@@ -127,7 +135,9 @@ class Generator(nn.Module):
 
         n_boxes = self.get_n_boxes()
 
-        def sample_z(x): return self.sample_z(x, tmp=tmp)
+        def sample_z(x):
+            return self.sample_z(x, tmp=tmp)
+
         z_shape_obj = sample_z((batch_size, n_boxes, z_dim))
         z_app_obj = sample_z((batch_size, n_boxes, z_dim))
         z_shape_bg = sample_z((batch_size, z_dim_bg))
@@ -152,6 +162,10 @@ class Generator(nn.Module):
         return vis_dict
 
     def get_random_camera(self, batch_size=32, to_device=True):
+        """Get random camera and matrixs.
+            camera_mat: camera to screen
+            world_mat: world to camera
+        """
         camera_mat = self.camera_matrix.repeat(batch_size, 1, 1)
         world_mat = get_random_pose(
             self.range_u, self.range_v, self.range_radius, batch_size)
@@ -180,6 +194,7 @@ class Generator(nn.Module):
             R_bg = torch.stack(R_bg, dim=0).reshape(
                 batch_size, 3, 3).float()
         else:
+            # no rotation
             R_bg = torch.eye(3).unsqueeze(0).repeat(batch_size, 1, 1).float()
         if to_device:
             R_bg = R_bg.to(self.device)
@@ -225,13 +240,17 @@ class Generator(nn.Module):
                                      batch_size=32, to_device=True):
         s, t, R = [], [], []
 
-        def rand_s(): return range_s[0] + \
-            np.random.rand() * (range_s[1] - range_s[0])
+        def rand_s():
+            return range_s[0] + \
+                np.random.rand() * (range_s[1] - range_s[0])
 
-        def rand_t(): return range_t[0] + \
-            np.random.rand() * (range_t[1] - range_t[0])
-        def rand_r(): return range_r[0] + \
-            np.random.rand() * (range_r[1] - range_r[0])
+        def rand_t():
+            return range_t[0] + \
+                np.random.rand() * (range_t[1] - range_t[0])
+
+        def rand_r():
+            return range_r[0] + \
+                np.random.rand() * (range_r[1] - range_r[0])
 
         for i in range(batch_size):
             val_s = [[rand_s(), rand_s(), rand_s()] for j in range(n_boxes)]
@@ -267,6 +286,10 @@ class Generator(nn.Module):
 
     def transform_points_to_box(self, p, transformations, box_idx=0,
                                 scale_factor=1.):
+        r""" k^{-1}(x) in Eq. 7.
+            k(x) = R S X + t (Eq. 6)
+            k^{-1}(x) = ???
+        """
         bb_s, bb_t, bb_R = transformations
         p_box = (bb_R[:, box_idx] @ (p - bb_t[:, box_idx].unsqueeze(1)
                                      ).permute(0, 2, 1)).permute(
@@ -298,6 +321,8 @@ class Generator(nn.Module):
         batch_size = pixels_world.shape[0]
         n_steps = di.shape[-1]
 
+        # import ipdb
+        # ipdb.set_trace()
         pixels_world_i = self.transform_points_to_box(
             pixels_world, transformations, i)
         camera_world_i = self.transform_points_to_box(
@@ -397,10 +422,14 @@ class Generator(nn.Module):
         assert(not (not_render_background and only_render_background))
 
         # Arange Pixels
+        # use [1] get scales_pixels
         pixels = arange_pixels((res, res), batch_size,
                                invert_y_axis=False)[1].to(device)
+        # TODO: why we do this
+        #   --> equals to set invert_y_axis=True in arange_pixels
         pixels[..., -1] *= -1.
         # Project to 3D world
+        # camera_matrices: [cam_mat, world_mat]
         pixels_world = image_points_to_world(
             pixels, camera_mat=camera_matrices[0],
             world_mat=camera_matrices[1])
@@ -424,6 +453,7 @@ class Generator(nn.Module):
             n_boxes = 0
         for i in range(n_iter):
             if i < n_boxes:  # Object
+                # transformatios: [(bz, N, 3), (bz, N, 3), (bz, N, 3, 3)]
                 p_i, r_i = self.get_evaluation_points(
                     pixels_world, camera_world, di, transformations, i)
                 z_shape_i, z_app_i = z_shape_obj[:, i], z_app_obj[:, i]
