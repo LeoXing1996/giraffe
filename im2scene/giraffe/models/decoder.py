@@ -41,6 +41,7 @@ class Decoder(nn.Module):
                  z_dim=64, rgb_out_dim=128, final_sigmoid_activation=False,
                  downscale_p_by=2., positional_encoding="normal",
                  gauss_dim_pos=10, gauss_dim_view=4, gauss_std=4.,
+                 use_aux_rgb=False,
                  **kwargs):
         super().__init__()
         self.use_viewdirs = use_viewdirs
@@ -96,6 +97,11 @@ class Decoder(nn.Module):
             self.blocks_view = nn.ModuleList(
                 [nn.Linear(dim_embed_view + hidden_size, hidden_size)
                  for i in range(n_blocks_view - 1)])
+
+        self.use_aux_rgb = use_aux_rgb
+        if use_aux_rgb:
+            self.to_rgb = nn.Sequential(nn.Linear(rgb_out_dim, 3),
+                                        nn.Tanh())
 
     def transform_points(self, p, views=False):
         # Positional encoding

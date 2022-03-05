@@ -81,9 +81,15 @@ class Generator(nn.Module):
         else:
             self.neural_renderer = None
 
+        if hasattr(self.decoder, 'to_rgb'):
+            self.aux_to_rgb = self.decoder.to_rgb.to(device)
+        else:
+            self.aux_to_rgb = None
+
     def forward(self, batch_size=32, latent_codes=None, camera_matrices=None,
                 transformations=None, bg_rotation=None, mode="training", it=0,
                 return_alpha_map=False,
+                return_aux_rgb=False,  # add by us
                 not_render_background=False,
                 only_render_background=False,
                 only_nerf=False  # add by us
@@ -117,10 +123,18 @@ class Generator(nn.Module):
                 latent_codes, camera_matrices, transformations, bg_rotation,
                 mode=mode, it=it, not_render_background=not_render_background,
                 only_render_background=only_render_background)
-            if self.neural_renderer is not None and not only_nerf:
+
+            if only_nerf:
+                return rgb_v
+
+            if self.neural_renderer is not None:
                 rgb = self.neural_renderer(rgb_v)
             else:
                 rgb = rgb_v
+
+            if return_aux_rgb:
+                aux_rgb = self.aux_to_rgb(rgb_v)
+                return torch.cat([rgb, aux_rgb], dim=0)
             return rgb
 
     def get_n_boxes(self):
@@ -430,6 +444,8 @@ class Generator(nn.Module):
         pixels[..., -1] *= -1.
         # Project to 3D world
         # camera_matrices: [cam_mat, world_mat]
+        # import ipdb
+        # ipdb.set_trace()
         pixels_world = image_points_to_world(
             pixels, camera_mat=camera_matrices[0],
             world_mat=camera_matrices[1])

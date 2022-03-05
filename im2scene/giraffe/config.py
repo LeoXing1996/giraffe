@@ -31,6 +31,19 @@ def get_model(cfg, device=None, len_dataset=0, **kwargs):
     z_dim_bg = cfg['model']['z_dim_bg']
     img_size = cfg['data']['img_size']
 
+    # load aux discriminator
+    if 'aux_disc' in cfg['model'] and cfg['model']['aux_disc']:
+        aux_disc_cfg = cfg['model'].get('aux_disc_kwargs', dict())
+        # true img size for aux img
+        aux_rgb_img_size = cfg['model']['generator_kwargs'].get(
+            'resolution_vol', 16)
+        aux_disc = discriminator_dict[discriminator](
+            img_size=aux_rgb_img_size, **aux_disc_cfg)
+        # set aux_rgb as True
+        decoder_kwargs['use_aux_rgb'] = True
+    else:
+        aux_disc = None
+
     # Load always the decoder
     decoder = models.decoder_dict[decoder](
         z_dim=z_dim, **decoder_kwargs
@@ -68,6 +81,7 @@ def get_model(cfg, device=None, len_dataset=0, **kwargs):
         device=device,
         discriminator=discriminator, generator=generator,
         generator_test=generator_test,
+        aux_disc=aux_disc
     )
     return model
 
