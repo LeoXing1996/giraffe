@@ -134,7 +134,7 @@ class Generator(nn.Module):
 
             if return_aux_rgb:
                 aux_rgb = self.aux_to_rgb(rgb_v)
-                return torch.cat([rgb, aux_rgb], dim=0)
+                return [rgb, aux_rgb]
             return rgb
 
     def get_n_boxes(self):

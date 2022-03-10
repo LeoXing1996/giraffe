@@ -100,7 +100,7 @@ class Decoder(nn.Module):
 
         self.use_aux_rgb = use_aux_rgb
         if use_aux_rgb:
-            self.to_rgb = nn.Sequential(nn.Linear(rgb_out_dim, 3),
+            self.to_rgb = nn.Sequential(nn.Conv2d(rgb_out_dim, 3, 3, 1, 1),
                                         nn.Tanh())
 
     def transform_points(self, p, views=False):

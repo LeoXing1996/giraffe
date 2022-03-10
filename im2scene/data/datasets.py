@@ -114,7 +114,7 @@ class ImagesDataset(data.Dataset):
         use_tanh_range (bool): whether to rescale images to [-1, 1]
     '''
 
-    def __init__(self, dataset_folder,  size=64, celebA_center_crop=False,
+    def __init__(self, dataset_folder, size=64, celebA_center_crop=False,
                  random_crop=False, use_tanh_range=False):
 
         self.size = size

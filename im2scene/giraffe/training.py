@@ -28,6 +28,7 @@ class Trainer(BaseTrainer):
         overwrite_visualization (bool): whether to overwrite
             the visualization files
     '''
+
     def __init__(self,
                  model,
                  optimizer,
@@ -69,8 +70,10 @@ class Trainer(BaseTrainer):
 
         if hasattr(self.model, 'aux_disc'):
             self.aux_disc = self.model.aux_disc
+            self.use_aux = True
         else:
             self.aux_disc = None
+            self.use_aux = False
         if multi_gpu:
             self.aux_disc = torch.nn.DataParallel(self.aux_disc)
 
@@ -141,6 +144,8 @@ class Trainer(BaseTrainer):
         generator = self.generator
         discriminator = self.discriminator
 
+        batch_size = data['image'].size(0)
+
         toggle_grad(generator, True)
         toggle_grad(discriminator, False)
         generator.train()
@@ -149,28 +154,27 @@ class Trainer(BaseTrainer):
         self.optimizer.zero_grad()
 
         if self.multi_gpu:
-            latents = generator.module.get_vis_dict()
-            x_fake = generator(**latents, return_aux_rgb=True)
+            latents = generator.module.get_vis_dict(batch_size=batch_size)
+            x_fakes = generator(**latents, return_aux_rgb=True)
         else:
-            x_fake = generator(return_aux_rgb=True)
+            x_fakes = generator(batch_size=batch_size, return_aux_rgb=True)
 
-        x_fake, x_fake_aux = torch.split(x_fake, x_fake.size(0) // 2)
+        x_fake, x_fake_aux = x_fakes
         d_fake = discriminator(x_fake)
         d_fake_aux = self.aux_disc(x_fake_aux)
 
         gloss = compute_bce(d_fake, 1)
-        g_loss_aux = compute_bce(d_fake_aux, 1)
+        gloss_aux = compute_bce(d_fake_aux, 1)
 
-        gloss.backward()
+        total_loss = gloss + gloss_aux
+        total_loss.backward()
         self.optimizer.step()
-
-        g_loss_aux.backward()
-        self.optimizer_d_aux.step()
+        # self.optimizer_d_aux.step()
 
         if self.generator_test is not None:
             update_average(self.generator_test, generator, beta=0.999)
 
-        return gloss.item(), g_loss_aux.item()
+        return gloss.item(), gloss_aux.item()
 
     def train_step_generator(self, data, it=None, z=None):
         generator = self.generator
@@ -244,6 +248,7 @@ class Trainer(BaseTrainer):
     def train_step_discriminator_with_aux(self, data, it=None, z=None):
         generator = self.generator
         discriminator = self.discriminator
+        batch_size = data['image'].size(0)
         toggle_grad(generator, False)
         toggle_grad(discriminator, True)
         generator.train()
@@ -263,11 +268,11 @@ class Trainer(BaseTrainer):
         reg = 10. * compute_grad2(d_real, x_real).mean()
         loss_d_full += reg
 
-        x_real_aux = data.get('image').to(self.device)
+        x_real_aux = F.upsample(x_real, size=16)
         loss_d_full_aux = 0.
 
         x_real_aux.requires_grad_()
-        d_real_aux = discriminator(x_real_aux)
+        d_real_aux = self.aux_disc(x_real_aux)
 
         d_loss_real_aux = compute_bce(d_real_aux, 1)
         loss_d_full_aux += d_loss_real_aux
@@ -277,16 +282,19 @@ class Trainer(BaseTrainer):
 
         with torch.no_grad():
             if self.multi_gpu:
-                latents = generator.module.get_vis_dict()
-                x_fake = generator(**latents,
-                                   return_aux_rgb=self.aux_disc is not None)
+                latents = generator.module.get_vis_dict(batch_size=batch_size)
+                x_fakes = generator(**latents,
+                                    return_aux_rgb=self.aux_disc is not None)
             else:
-                x_fake = generator(return_aux_rgb=self.aux_disc is not None)
+                x_fakes = generator(batch_size=batch_size,
+                                    return_aux_rgb=self.aux_disc is not None)
 
+        x_fake, x_fake_aux = x_fakes
         x_fake.requires_grad_()
+        x_fake_aux.requires_grad_()
 
-        assert x_fake.size(0) == x_real.size(0) * 2
-        x_fake, x_fake_aux = torch.split(x_fake, x_real.size(0), dim=0)
+        # assert x_fake.size(0) == x_real.size(0) * 2
+        # x_fake, x_fake_aux = torch.split(x_fake, x_real.size(0), dim=0)
         d_fake = discriminator(x_fake)
         d_fake_aux = self.aux_disc(x_fake_aux)
 
@@ -296,15 +304,13 @@ class Trainer(BaseTrainer):
         loss_d_full += d_loss_fake
         loss_d_full_aux += d_loss_fake_aux
 
-        loss_d_full_aux.backward()
-        self.optimizer_d_aux.step()
-
-        loss_d_full.backward()
+        total_loss = loss_d_full + loss_d_full_aux
+        total_loss.backward()
         self.optimizer_d.step()
 
         d_loss = (d_loss_fake + d_loss_real)
+        d_loss_aux = (d_loss_fake_aux + d_loss_real_aux)
 
-        d_loss_aux = (d_loss_fake_aux + d_loss_real_aux).item()
         return (d_loss.item(), reg.item(), d_loss_fake.item(),
                 d_loss_real.item(), d_loss_aux.item(), reg_aux.item(),
                 d_loss_fake_aux.item(), d_loss_real_aux.item())
@@ -321,13 +327,25 @@ class Trainer(BaseTrainer):
         gen.eval()
         with torch.no_grad():
             # image_fake = self.generator(**self.vis_dict, mode='val').cpu()
-            image_fake = self.generator(**self.vis_dict,
-                                        mode='val',
-                                        return_aux_rgb=True).cpu()
+            image_fakes = self.generator(**self.vis_dict,
+                                         mode='val',
+                                         return_aux_rgb=self.use_aux)
+            if self.use_aux:
+                image_fake, image_fake_aux = image_fakes
+                image_fake_aux = F.upsample(
+                    image_fake_aux, size=image_fake.size(-1))
+                image_fake = torch.cat(
+                    [image_fake, image_fake_aux], dim=0).cpu()
+            else:
+                image_fake = image_fake.cpu()
             nerf_feat = self.generator(**self.vis_dict,
                                        mode='val',
                                        only_nerf=True).cpu()
             nerf_feat_resize = F.interpolate(nerf_feat, image_fake.size(2))
+            nerf_feat_resize = nerf_feat_resize.sum(dim=1, keepdim=True)
+            nerf_feat_max = nerf_feat_resize.abs().max()
+            nerf_feat_resize = nerf_feat_resize / nerf_feat_max
+            nerf_feat_resize = torch.cat([nerf_feat_resize] * 3, dim=1)
 
         image_final = torch.cat([image_fake, nerf_feat_resize])
 
@@ -336,7 +354,7 @@ class Trainer(BaseTrainer):
         else:
             out_file_name = 'visualization_%010d.png' % it
 
-        # image_grid = make_grid(image_fake.clamp_(0., 1.), nrow=4)
         image_grid = make_grid(image_final.clamp_(0., 1.), nrow=3)
-        save_image(image_grid, os.path.join(self.vis_dir, out_file_name))
+        save_image(image_final.clamp_(0., 1.), os.path.join(
+            self.vis_dir, out_file_name), nrow=8)
         return image_grid
