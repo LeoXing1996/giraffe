@@ -68,13 +68,13 @@ class Trainer(BaseTrainer):
             self.discriminator = self.model.discriminator
             self.generator_test = self.model.generator_test
 
-        if hasattr(self.model, 'aux_disc'):
+        if hasattr(self.model, 'aux_disc') and self.model.aux_disc is not None:
             self.aux_disc = self.model.aux_disc
             self.use_aux = True
         else:
             self.aux_disc = None
             self.use_aux = False
-        if multi_gpu:
+        if multi_gpu and self.aux_disc is not None:
             self.aux_disc = torch.nn.DataParallel(self.aux_disc)
 
         if vis_dir is not None and not os.path.exists(vis_dir):
@@ -104,6 +104,7 @@ class Trainer(BaseTrainer):
 
             return {
                 'generator': loss_g,
+                'generator_aux': loss_g_aux,
                 'discriminator': loss_d,
                 'discriminator_aux': loss_d_aux,
                 'regularizer': reg_d,
@@ -321,6 +322,11 @@ class Trainer(BaseTrainer):
         Args:
             it (int): training iteration
         '''
+
+        # hard code here
+        n_row = 8
+        batch_size = 16
+
         gen = self.model.generator_test
         if gen is None:
             gen = self.model.generator
@@ -334,17 +340,22 @@ class Trainer(BaseTrainer):
                 image_fake, image_fake_aux = image_fakes
                 image_fake_aux = F.upsample(
                     image_fake_aux, size=image_fake.size(-1))
+                # rerange aux img activated by tanh
+                image_fake_aux = (image_fake_aux + 1) / 2
                 image_fake = torch.cat(
                     [image_fake, image_fake_aux], dim=0).cpu()
             else:
-                image_fake = image_fake.cpu()
+                image_fake = image_fakes.cpu()
             nerf_feat = self.generator(**self.vis_dict,
                                        mode='val',
                                        only_nerf=True).cpu()
             nerf_feat_resize = F.interpolate(nerf_feat, image_fake.size(2))
             nerf_feat_resize = nerf_feat_resize.sum(dim=1, keepdim=True)
-            nerf_feat_max = nerf_feat_resize.abs().max()
-            nerf_feat_resize = nerf_feat_resize / nerf_feat_max
+            nerf_feat_max = nerf_feat_resize.view(
+                batch_size, -1).abs().max(dim=1, keepdim=True)[0]
+            nerf_feat_resize = nerf_feat_resize / \
+                nerf_feat_max[..., None, None]
+            nerf_feat_resize = (nerf_feat_resize + 1) / 2
             nerf_feat_resize = torch.cat([nerf_feat_resize] * 3, dim=1)
 
         image_final = torch.cat([image_fake, nerf_feat_resize])
@@ -354,7 +365,7 @@ class Trainer(BaseTrainer):
         else:
             out_file_name = 'visualization_%010d.png' % it
 
-        image_grid = make_grid(image_final.clamp_(0., 1.), nrow=3)
+        image_grid = make_grid(image_final.clamp_(0., 1.), nrow=n_row)
         save_image(image_final.clamp_(0., 1.), os.path.join(
-            self.vis_dir, out_file_name), nrow=8)
+            self.vis_dir, out_file_name), nrow=n_row)
         return image_grid

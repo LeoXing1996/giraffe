@@ -71,6 +71,9 @@ optimizer = op(parameters_g, lr=lr, **optimizer_kwargs)
 
 if hasattr(model, "discriminator") and model.discriminator is not None:
     parameters_d = model.discriminator.parameters()
+    if hasattr(model, "aux_disc") and model.aux_disc is not None:
+        parameters_d = [p for p in model.aux_disc.parameters()] + \
+            [p for p in parameters_d]
     optimizer_d = op(parameters_d, lr=lr_d)
 else:
     optimizer_d = None

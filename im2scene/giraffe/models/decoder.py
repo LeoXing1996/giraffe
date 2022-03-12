@@ -100,8 +100,11 @@ class Decoder(nn.Module):
 
         self.use_aux_rgb = use_aux_rgb
         if use_aux_rgb:
-            self.to_rgb = nn.Sequential(nn.Conv2d(rgb_out_dim, 3, 3, 1, 1),
-                                        nn.Tanh())
+            self.to_rgb = nn.Sequential(
+                nn.Conv2d(rgb_out_dim, rgb_out_dim//2, 3, 1, 1),
+                nn.Conv2d(rgb_out_dim//2, rgb_out_dim//4, 3, 1, 1),
+                nn.Conv2d(rgb_out_dim//4, 3, 3, 1, 1),
+                nn.Tanh())
 
     def transform_points(self, p, views=False):
         # Positional encoding
